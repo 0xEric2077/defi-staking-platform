@@ -8,10 +8,17 @@ import './globals.css';
 // Configure Inter font
 const inter = Inter({ subsets: ['latin'] });
 
-// Metadata with title and description
+// Updated metadata
 export const metadata = {
-  title: 'Your App Title', // Replace with your app title
-  description: 'Your app description goes here.', // Replace with your app description
+  title: "DeFi Staking Platform | Earn 15% APY",
+  description:
+    "Stake your tokens and earn 15% APY with our secure DeFi staking platform on Ethereum Sepolia testnet",
+  keywords: ["DeFi", "Staking", "Ethereum", "Web3", "Yield Farming"],
+  openGraph: {
+    title: "DeFi Staking Platform",
+    description: "Earn 15% APY on your staked tokens",
+    images: ["/og-image.png"],
+  },
 };
 
 // Custom toast styling
