@@ -58,6 +58,49 @@ export function Providers({ children }) {
   );
 
   const [mounted, setMounted] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // 处理断开连接
+  const handleDisconnect = async () => {
+    if (typeof window !== "undefined" && window.ethereum) {
+      try {
+        // 获取当前连接的账户
+        const accounts = await window.ethereum.request({
+          method: "eth_accounts",
+        });
+
+        if (accounts && accounts.length > 0) {
+          // 直接调用 eth_disconnect 方法
+          await window.ethereum.request({
+            method: "wallet_revokePermissions",
+            params: [
+              {
+                eth_accounts: {},
+              },
+            ],
+          });
+
+          // 清除所有授权
+          await window.ethereum
+            .request({
+              method: "eth_requestAccounts",
+              params: [],
+            })
+            .catch(() => {});
+        }
+
+        // 清除连接状态
+        setIsConnected(false);
+
+        // 刷新页面以确保状态完全重置
+        window.location.reload();
+      } catch (error) {
+        console.error("Failed to disconnect:", error);
+        // 即使出错也尝试刷新页面
+        window.location.reload();
+      }
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -67,43 +110,49 @@ export function Providers({ children }) {
       if (typeof window !== "undefined" && window.ethereum) {
         try {
           // 请求账户访问
-          await window.ethereum.request({ method: "eth_accounts" });
-
-          // 检查当前网络
-          const chainId = await window.ethereum.request({
-            method: "eth_chainId",
+          const accounts = await window.ethereum.request({
+            method: "eth_accounts",
           });
-          if (chainId !== "0x7a69") {
-            // 31337 in hex
-            // 尝试切换到 localhost 网络
-            try {
-              await window.ethereum.request({
-                method: "wallet_switchEthereumChain",
-                params: [{ chainId: "0x7a69" }],
-              });
-            } catch (switchError) {
-              // 如果网络不存在，则添加网络
-              if (switchError.code === 4902) {
+          setIsConnected(accounts && accounts.length > 0);
+
+          if (accounts && accounts.length > 0) {
+            // 检查当前网络
+            const chainId = await window.ethereum.request({
+              method: "eth_chainId",
+            });
+            if (chainId !== "0x7a69") {
+              // 31337 in hex
+              // 尝试切换到 localhost 网络
+              try {
                 await window.ethereum.request({
-                  method: "wallet_addEthereumChain",
-                  params: [
-                    {
-                      chainId: "0x7a69",
-                      chainName: "Localhost",
-                      nativeCurrency: {
-                        name: "Ethereum",
-                        symbol: "ETH",
-                        decimals: 18,
-                      },
-                      rpcUrls: ["http://127.0.0.1:8545"],
-                    },
-                  ],
+                  method: "wallet_switchEthereumChain",
+                  params: [{ chainId: "0x7a69" }],
                 });
+              } catch (switchError) {
+                // 如果网络不存在，则添加网络
+                if (switchError.code === 4902) {
+                  await window.ethereum.request({
+                    method: "wallet_addEthereumChain",
+                    params: [
+                      {
+                        chainId: "0x7a69",
+                        chainName: "Localhost",
+                        nativeCurrency: {
+                          name: "Ethereum",
+                          symbol: "ETH",
+                          decimals: 18,
+                        },
+                        rpcUrls: ["http://127.0.0.1:8545"],
+                      },
+                    ],
+                  });
+                }
               }
             }
           }
         } catch (error) {
           console.error("Failed to check wallet connection:", error);
+          setIsConnected(false);
         }
       }
     };
@@ -112,18 +161,32 @@ export function Providers({ children }) {
 
     // 监听钱包连接状态变化
     if (window.ethereum) {
-      window.ethereum.on("accountsChanged", checkConnection);
-      window.ethereum.on("chainChanged", () => window.location.reload());
-    }
+      const handleAccountsChanged = (accounts) => {
+        setIsConnected(accounts && accounts.length > 0);
+        if (!accounts || accounts.length === 0) {
+          handleDisconnect();
+        } else {
+          checkConnection();
+        }
+      };
 
-    return () => {
-      if (window.ethereum) {
-        window.ethereum.removeListener("accountsChanged", checkConnection);
-        window.ethereum.removeListener("chainChanged", () =>
-          window.location.reload()
+      const handleChainChanged = () => {
+        checkConnection();
+      };
+
+      window.ethereum.on("accountsChanged", handleAccountsChanged);
+      window.ethereum.on("chainChanged", handleChainChanged);
+      window.ethereum.on("disconnect", handleDisconnect);
+
+      return () => {
+        window.ethereum.removeListener(
+          "accountsChanged",
+          handleAccountsChanged
         );
-      }
-    };
+        window.ethereum.removeListener("chainChanged", handleChainChanged);
+        window.ethereum.removeListener("disconnect", handleDisconnect);
+      };
+    }
   }, []);
 
   if (!mounted) {
@@ -133,7 +196,9 @@ export function Providers({ children }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider>{children}</RainbowKitProvider>
+        <RainbowKitProvider onDisconnect={handleDisconnect}>
+          {children}
+        </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
